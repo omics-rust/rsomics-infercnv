@@ -12,6 +12,11 @@ description = "Infer copy-number variations from single-cell RNA-seq expression 
 name = "rsomics-infercnv"
 path = "src/main.rs"
 
+
+[lib]
+name = "rsomics_infercnv"
+path = "src/lib.rs"
+doctest = false
 [dependencies]
 rsomics-common = { version = "0.6" }
 rsomics-help = { version = "0.3" }
