@@ -15,7 +15,6 @@ pub struct GenePos {
     pub name: String,
 }
 
-/// Load gene ordering from a GTF/GFF — extracts gene-level features sorted by genomic position
 pub fn load_gene_order(gtf_path: &Path) -> Result<Vec<GenePos>> {
     let file = File::open(gtf_path)
         .map_err(|e| RsomicsError::InvalidInput(format!("{}: {e}", gtf_path.display())))?;
@@ -61,8 +60,6 @@ fn extract_attr(attrs: &str, key: &str) -> Option<String> {
 
 type ExpressionMatrix = (Vec<String>, Vec<String>, Vec<Vec<f64>>);
 
-/// Load a dense expression matrix (TSV: genes as rows, cells as columns).
-/// First column = gene name, first row = cell barcodes.
 pub fn load_matrix(path: &Path) -> Result<ExpressionMatrix> {
     let file = File::open(path)
         .map_err(|e| RsomicsError::InvalidInput(format!("{}: {e}", path.display())))?;
@@ -95,12 +92,6 @@ pub fn load_matrix(path: &Path) -> Result<ExpressionMatrix> {
     Ok((genes, cells, data))
 }
 
-/// Core inferCNV algorithm:
-/// 1. Reorder genes by genomic position
-/// 2. Log-normalize expression
-/// 3. Per-cell sliding-window smoothing
-/// 4. Subtract reference (mean of normal cells)
-/// 5. Output per-cell CNV signal matrix
 pub fn infer_cnv(
     gene_names: &[String],
     cell_names: &[String],
@@ -116,14 +107,12 @@ pub fn infer_cnv(
         return Err(RsomicsError::InvalidInput("empty matrix".into()));
     }
 
-    // Map gene names to their genomic-order index
     let order_map: BTreeMap<&str, usize> = gene_order
         .iter()
         .enumerate()
         .map(|(i, g)| (g.name.as_str(), i))
         .collect();
 
-    // Find genes present in both matrix and annotation
     let mut ordered_indices: Vec<(usize, usize)> = Vec::new(); // (matrix_idx, order_idx)
     for (mi, name) in gene_names.iter().enumerate() {
         if let Some(&oi) = order_map.get(name.as_str()) {
@@ -139,7 +128,6 @@ pub fn infer_cnv(
         ));
     }
 
-    // Build reordered + log-normalized matrix (genes_ordered × cells)
     let mut norm: Vec<Vec<f64>> = vec![vec![0.0; n_cells]; n_ordered];
     for (gi, &(mi, _)) in ordered_indices.iter().enumerate() {
         for ci in 0..n_cells {
@@ -152,7 +140,6 @@ pub fn infer_cnv(
         }
     }
 
-    // Sliding-window smoothing per cell
     let half = window_size / 2;
     let mut smoothed: Vec<Vec<f64>> = vec![vec![0.0; n_cells]; n_ordered];
     for ci in 0..n_cells {
@@ -164,7 +151,6 @@ pub fn infer_cnv(
         }
     }
 
-    // Compute reference mean (from normal cells)
     let mut ref_mean: Vec<f64> = vec![0.0; n_ordered];
     if !ref_cell_indices.is_empty() {
         for gi in 0..n_ordered {
@@ -173,7 +159,6 @@ pub fn infer_cnv(
         }
     }
 
-    // Subtract reference → CNV signal
     let mut cnv: Vec<Vec<f64>> = vec![vec![0.0; n_cells]; n_ordered];
     for gi in 0..n_ordered {
         for ci in 0..n_cells {
@@ -189,7 +174,6 @@ pub fn infer_cnv(
     Ok((ordered_gene_names, cnv))
 }
 
-/// Write CNV matrix as TSV
 pub fn write_cnv(
     gene_names: &[String],
     cell_names: &[String],
@@ -198,14 +182,12 @@ pub fn write_cnv(
 ) -> Result<()> {
     let mut out = BufWriter::with_capacity(256 * 1024, output);
 
-    // Header
     out.write_all(b"gene").map_err(RsomicsError::Io)?;
     for c in cell_names {
         write!(out, "\t{c}").map_err(RsomicsError::Io)?;
     }
     writeln!(out).map_err(RsomicsError::Io)?;
 
-    // Data
     for (gi, gene) in gene_names.iter().enumerate() {
         out.write_all(gene.as_bytes()).map_err(RsomicsError::Io)?;
         if gi < cnv.len() {
